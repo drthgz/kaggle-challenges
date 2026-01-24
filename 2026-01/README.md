@@ -4,28 +4,29 @@
 
 **Kaggle Link**: https://www.kaggle.com/competitions/playground-series-s6e1
 
-**Objective**: Predict student test scores based on available features
+**Objective**: Predict student exam scores based on available features
 
 **Dataset**: 
-- Training set: [number of rows] samples with [number of features] features
-- Test set: [number of rows] samples
-- Target variable: `test_score`
+- Training set: 630,000 samples with 12 features (+ target)
+- Test set: 270,000 samples with 11 features
+- Target variable: `exam_score`
+- ID column: `id`
 
-**Evaluation Metric**: [RMSE/MAE/Accuracy - as per competition]
+**Evaluation Metric**: Root Mean Squared Error (RMSE)
 
 ## 🎯 Approach
 
 ### 1. Exploratory Data Analysis (EDA)
-- [ ] Load and inspect data
-- [ ] Check for missing values
-- [ ] Analyze feature distributions
-- [ ] Identify correlations with target
+- [x] Load and inspect data
+- [x] Check for missing values
+- [x] Analyze feature distributions
+- [x] Identify correlations with target
 - [ ] Detect outliers
 
 ### 2. Data Preprocessing
-- [ ] Handle missing values
-- [ ] Encode categorical variables
-- [ ] Scale/normalize features
+- [x] Handle missing values
+- [x] Encode categorical variables
+- [x] Scale/normalize features
 - [ ] Remove/engineer features
 
 ### 3. Feature Engineering
@@ -35,7 +36,7 @@
 - [ ] Feature selection
 
 ### 4. Model Development
-- [ ] Baseline model
+- [x] Baseline model
 - [ ] Try multiple algorithms
 - [ ] Hyperparameter tuning
 - [ ] Cross-validation
@@ -47,19 +48,36 @@
 
 ## 📊 Results
 
-**Best Model**: [Model name and score]
-**Cross-Validation Score**: [Score]
-**Test Submission Score**: [Score]
+### Baseline Model: Linear Regression
+- **Training RMSE**: 9.9596
+- **Validation RMSE**: 9.9452
+- **Training R²**: 0.7232
+- **Validation R²**: 0.7219
 
 ### Performance Progression
-| Attempt | Approach | Score | Notes |
-|---------|----------|-------|-------|
-| 1 | Baseline | - | Initial submission |
-| 2 | [Improvement] | - | [Notes] |
+| Attempt | Model | Validation RMSE | Notes |
+|---------|-------|-----------------|-------|
+| 1 | Linear Regression (Baseline) | 9.9452 | All features, simple scaling |
+| 2 | [Pending] | - | [To be updated] |
+| 3 | [Pending] | - | [To be updated] |
 
 ## 💡 Key Learnings
 
-See [notes.md](notes.md) for detailed learnings and insights.
+### Feature Importance
+**Numeric Features**:
+- `study_hours`: Strong positive correlation (0.762) with exam_score
+- `class_attendance`: Moderate positive correlation (0.361)
+- `sleep_hours`: Weak positive correlation (0.167)
+- `age`: Negligible correlation (0.010)
+
+**Categorical Features**: 7 features (gender, course, internet_access, sleep_quality, study_method, facility_rating, exam_difficulty)
+
+### Data Characteristics
+- No duplicate rows
+- No missing values
+- Target (exam_score) distribution is approximately normal, centered at 62.5
+- Range: 19.6 to 100.0 (scale of 0-100)
+- Large dataset: 630,000 training samples
 
 ## 📂 File Structure
 
@@ -70,5 +88,5 @@ See [notes.md](notes.md) for detailed learnings and insights.
 
 ---
 
-**Status**: In Progress
+**Status**: Baseline Established ✅
 **Last Updated**: January 24, 2026
