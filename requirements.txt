@@ -1,0 +1,36 @@
+# Data Processing
+pandas>=1.5.0
+numpy>=1.23.0
+
+# Visualization
+matplotlib>=3.6.0
+seaborn>=0.12.0
+plotly>=5.10.0
+
+# Machine Learning
+scikit-learn>=1.1.0
+xgboost>=1.7.0
+lightgbm>=3.3.0
+catboost>=1.1.0
+
+# Deep Learning (optional, uncomment if needed)
+# tensorflow>=2.10.0
+# torch>=1.13.0
+
+# Utilities
+jupyter>=1.0.0
+ipython>=8.5.0
+tqdm>=4.64.0
+
+# Data exploration
+pandas-profiling>=3.6.0
+
+# Feature Engineering
+category-encoders>=2.6.0
+
+# Explainability (optional)
+# shap>=0.41.0
+# lime>=0.2.0
+
+# Kaggle API (optional)
+# kaggle>=1.5.0
