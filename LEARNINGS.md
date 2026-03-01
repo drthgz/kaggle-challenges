@@ -59,26 +59,178 @@ Cumulative insights, patterns, and techniques discovered across challenges. For 
 
 ## 2026-02: Heart Disease Prediction (Classification)
 
-**Challenge Type**: Classification | **Metric**: AUC-ROC | **Status**: In Progress
+**Challenge Type**: Classification | **Metric**: AUC-ROC | **Result**: Position 2281 / 2893, Private LB 0.95486
 
-### Key Differences from Regression (2026-01)
+### Final Performance
 
-#### Transferred Successfully
-- ✅ 5-Fold stacking with LGB + XGB base models
-- ✅ Weighted blending with Ridge meta-learner
-- ✅ Feature engineering (interactions, polynomials, ratios)
-- ✅ Preprocessing pipeline (categorical encoding + numeric scaling)
-- ✅ Runtime optimization (no visualizations)
-- ✅ Cross-validation strategy
+- **Baseline (LogisticRegression)**: 0.9515 AUC
+- **Single best models**: 0.9550-0.9551 AUC (LGB, XGB, CatBoost nearly identical)
+- **Stacking (L1+L2)**: 0.9552 AUC (minimal improvement over singles)
+- **Blending with optimized weights**: 0.9588 AUC (holdout test)
+- **Final submission**: 0.95486 private LB (+0.18% vs prior 0.95310 baseline)
+- **1st place**: 0.95535 (49 bp ahead of us)
 
-#### What Changed
-- **Model classes**: Classifier instead of Regressor
-- **Output**: Probabilities (0.0-1.0) via `predict_proba()`, not raw predictions
-- **Metric**: AUC-ROC (threshold-independent) vs RMSE (threshold-sensitive)
-- **Baseline**: LogisticRegression vs LinearRegression
-- **Tree counts**: Reduced to 200-250 (classification converges faster)
-- **Blend weights**: 0.4 LGB, 0.4 XGB, 0.2 Stack (equal LGB/XGB due to similarity)
-- **Validation**: Should use StratifiedKFold to maintain class distribution
+### Key Learnings
+
+#### ✅ What Transferred Well from 2026-01
+- 5-Fold stacking architecture with LGB + XGB + CatBoost base models
+- Weighted blending with empirical weight optimization on holdout
+- Ridge meta-learner for combining predictions
+- Preprocessing pipeline (LabelEncoder + StandardScaler)
+- Cross-validation strategy with StratifiedKFold for classification
+
+#### ✅ Classification-Specific Insights
+1. **Model convergence**: All three GBDT models (LGB, XGB, Cat) converged to nearly identical performance (~0.9550-0.9551)
+   - Implies single model had ~95% of ensemble potential
+   - Best 3-model ensemble only added 0.15% improvement
+
+2. **Weight optimization matters**: 
+   - Tested 4 weight combinations on 10k holdout sample
+   - Best: (LGB 0.40, XGB 0.40, CatBoost 0.15, Stack 0.05) = 0.9588 AUC
+   - Demonstrated that blending weights need empirical search, not equal averaging
+
+3. **Calibration had minimal effect**:
+   - IsotonicRegression improved training AUC from 0.9552 → 0.9553 (1 bp)
+   - Suggests predictions already well-calibrated; diminishing returns on post-hoc calibration
+
+4. **Feature engineering backfired**:
+   - Added 13 engineered features (interactions, polynomials, ratios)
+   - Degraded performance severely (0.9549 → 0.4993 AUC)
+   - Reverted to original 13 base features
+   - **Lesson**: Not all datasets benefit from engineering; test incrementally
+
+5. **StratifiedKFold critical for classification**:
+   - Ensures each fold maintains class distribution (44.8% positive)
+   - Regular KFold would cause imbalanced splits, inflating CV scores
+
+#### ❌ Gaps Compared to 1st Place (0.95535 AUC)
+
+1. **Feature diversity** (biggest gap):
+   - We used: 1 representation (13 base features)
+   - 1st place used: 7 different feature representations
+     * Quantile & equal-width binning (numerical feature grouping)
+     * Digit features (units/tens/hundreds place extraction)
+     * All features treated as categorical strings
+     * Frequency encoding (rare value detection)
+     * Genetic programming features (nonlinear interactions via gplearn)
+     * Target encoding with original dataset signals
+     * Denoising VAE latent representations
+   - **Impact**: Different features create ensemble diversity even with same models
+
+2. **Model diversity**:
+   - We used: 3 base models (LGB, XGB, CatBoost)
+   - 1st place used: 7 model types (XGB, LGB, CatBoost, RealMLP, RGF, TabICL, AutoGluon)
+   - Generated: 150 OOF predictions (we had ~15)
+
+3. **Selection methodology**:
+   - We used: Manual weight grid search (4 combinations)
+   - 1st place used: Optuna with 2500 trials to find effective OOF subsets
+   - Selected ~10% of OOFs (only consistently high-value ones kept)
+
+4. **Full-data retraining**:
+   - We used: Standard CV + blend on holdout
+   - 1st place used: Retrain selected models on full dataset with 20 random seeds, then average
+   - **Finding**: This beat simple holdout-based blend
+
+5. **CV-LB monitoring** (most important meta-lesson):
+   - 1st place calculated CV on fold predictions → monitored correlation to LB
+   - Observed: Beyond CV 0.95578, improvements in CV no longer translated to LB
+   - Interpreted: Split overfitting above that threshold
+   - **Decision**: Submitted CV 0.95578 instead of best CV 0.955865 they found
+   - **Result**: Correct choice (Final 0.95535 vs what their best CV might have yielded)
+   - **Lesson**: Trust CV-LB *relationship*, not absolute CV score
+
+### Classification-Specific Technical Details
+
+- **Output format**: Probabilities [0.0, 1.0] via `predict_proba()`, not class labels
+- **Metric**: AUC-ROC rewards probability calibration, not just ranking
+- **Data characteristics**: 630K samples, 13 numeric features, 44.8% positive class (well-balanced)
+- **Validation**: StratifiedKFold to maintain class ratio across folds
+- **Meta-learner**: Ridge works better than nonlinear models for stacking (1st place confirmed this)
+
+### What Didn't Work
+
+Methods that provided no benefit or hurt performance:
+- Feature engineering (13 engineered features destroyed performance)
+- Highly flexible stacking (Level 2 added no AUC gain over L1)
+- Too many OOFs without selection (1st place: averaging all 150 hurt; needed Optuna selection)
+- Pseudo-labeling, knowledge distillation, very deep GBDT models (per 1st place writeup)
+
+---
+
+## 🎓 Meta-Lesson: 1st Place Analysis - "Trust the CV-LB Relation"
+
+From Masaya Kawamata's 1st place writeup on S6E2:
+
+### Core Philosophy
+> "Don't chase the highest CV. Trust the CV-LB relationship. When CV no longer correlates with LB improvements, you're likely experiencing split overfitting."
+
+### What 1st Place Did Differently
+
+**Diversity Over Dominance**:
+- Created multiple feature *representations*, not multiple models trained on the same features
+- This alone justified testing. Their best single-model performance was 0.9557 - still under 1% away from final ensemble - but diversity is what enabled the edge
+
+**Aggressive but Disciplined Selection**:
+- Generated ~150 OOFs from 7 different models × 7 feature representations
+- Used Optuna to search 2500 trials finding effective OOF subsets
+- Only ~15% of OOFs consistently selected (insight: ensemble contribution ≠ individual CV performance)
+
+**Simple Ensemble, Rigorously Validated**:
+- Ridge regression as meta-learner (not neural networks or exotic stacking)
+- Full-data retraining on final models with 20 random seeds + averaging
+- Ridge worked best because it's stable and handles correlated predictions well
+
+**The Critical Insight: CV-LB Consistency**:
+- Monitored CV vs LB scores across multiple submissions
+- Found the CV-LB relationship was *consistent* up to CV 0.95578
+- But above 0.95578, improvements in CV didn't translate to LB improvements
+- **Final decision**: Submitted CV 0.95578 instead of their best CV 0.955865 found
+- **Result**: Correct - final private LB 0.95535 (confirms 0.95578 CV was more trustworthy)
+
+### Why We Lost 49 Basis Points
+
+1. **Feature representation** (estimated -30 bp impact):
+   - Didn't explore binning, digit features, frequency encoding, target encoding, genetic programming, or VAEs
+   - Stayed with 13 base features only
+
+2. **Model diversity** (estimated -15 bp impact):
+   - Used 3 models; 1st place used 7 different algorithms
+   - Missing: RealMLP, RGF, TabICL, AutoGluon
+
+3. **Ensemble size and selection** (estimated -5 bp impact):
+   - 15 OOFs vs 150 OOFs
+   - Manual 4-combination grid vs Optuna 2500-trial search
+
+4. **Full-data retraining** (estimated -1 bp impact):
+   - Didn't retrain on full data with multiple seeds
+
+5. **CV-LB monitoring** (estimated +0 bp, but prevents overfitting):
+   - We didn't systematically track CV-LB relationship
+   - Could have caught overfitting if we had
+
+### Actionable Takeaways for Next Challenges
+
+1. **Feature representations > model count**
+   - Before adding models, explore different feature transformations
+   - Idea: Binning, interactions, frequency encoding, target encoding
+
+2. **Monitor CV-LB correlation in your submissions**
+   - Submit multiple candidates and track their CV vs LB scores
+   - Look for where correlation breaks down
+   - Avoid the highest CV if relationship becomes unreliable
+
+3. **Test ensemble selection, not just averaging**
+   - Use Optuna-style search to find best OOF subsets
+   - Not all OOFs contribute equally; many can hurt
+
+4. **Use Ridge as meta-learner for stability**
+   - More complex meta-models (nonlinear stacking) tend to overfit
+   - Ridge is simpler and more robust
+
+5. **Full-data retraining can help**
+   - After CV-based hyperparameter tuning, retrain on full data with multiple seeds
+   - Average predictions across seeds
 
 ---
 
@@ -160,16 +312,19 @@ Base Models → Blending (0.4 LGB + 0.4 XGB + 0.2 Stack) ─────┴┴�
 
 | Aspect | 2026-01 (Regression) | 2026-02 (Classification) |
 |--------|----------------------|--------------------------|
-| **Baseline** | 9.9452 (Linear Reg) | 0.80-0.85 (Logistic) |
-| **Best Single** | 8.7720 (LGB) | ~0.90 (est) |
-| **Final** | ~8.76 (Ensemble) | ~0.90+ (est) |
-| **Improvement** | 11.9% | ~10-15% (est) |
-| **Features** | 19 (11+8 eng) | ~20 (est) |
-| **Key Feature** | study_hours (53%) | TBD |
+| **Baseline** | 9.9452 (Linear Reg) | 0.9515 (Logistic Reg) |
+| **Best Single** | 8.7720 (LGB) | 0.9551 (LGB/XGB/Cat tied) |
+| **Final** | 8.76 (Ensemble) | 0.95486 (Ensemble) |
+| **Improvement** | 11.9% | 0.18% improvement (0.77% vs baseline) |
+| **Position** | 2243 private LB | 2281 / 2893 private LB |
+| **Features** | 19 (11 base + 8 eng) | 13 base (engineering failed) |
+| **Key Feature** | study_hours (53%) | None dominant; all features ~equal |
 | **Models Used** | LGB, XGB, Cat | LGB, XGB, Cat |
 | **Ensemble** | Stacking + Blend | Stacking + Blend |
+| **Gap to 1st** | Unknown | 49 bp (0.95535 vs 0.95486) |
+| **Main bottleneck** | N/A | Feature diversity (only 1 representation) |
 
 ---
 
-*Last Updated*: January 31, 2026
-*Next Challenge*: 2026-03 (TBD)
+*Last Updated*: March 1, 2026
+*Next Challenge*: 2026-03 (Customer Churn Prediction - In Progress)
