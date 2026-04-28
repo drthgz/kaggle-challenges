@@ -31,7 +31,15 @@
 | 1 | — | — | — | First submission |
 
 ## What Worked / Didn't
-- TBD
+- Baseline stack (no pairwise target encoding) outperformed the pairwise-TE run.
+- Pairwise-TE run showed an unusual XGBoost instability: one CV fold dropped sharply (Fold 4 around 0.898), while other folds stayed near the expected range.
+- This behavior likely indicates interaction between high-cardinality encoded features and model/early-stopping dynamics, not a broad data issue.
+
+## Study Note For Next Iteration
+- Investigate why XGBoost can collapse on a single fold when pairwise target encoding is added.
+- Check per-fold class distribution drift and per-fold category coverage for key columns (Water_Source, Irrigation_Type, moisture_bucket).
+- Compare XGB with and without scaling on tree inputs, and tune regularization/early-stopping under high-dimensional encoded features.
+- Validate whether OOF encoding noise or sparse category mappings are amplifying fold variance.
 
 ## Key Differences from S6E3
 - Multiclass (3 classes) vs binary
