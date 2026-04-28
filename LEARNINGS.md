@@ -326,5 +326,77 @@ Base Models → Blending (0.4 LGB + 0.4 XGB + 0.2 Stack) ─────┴┴�
 
 ---
 
-*Last Updated*: March 1, 2026
-*Next Challenge*: 2026-03 (Customer Churn Prediction - In Progress)
+## 2026-04: Predicting Irrigation Need (Multiclass)
+
+**Challenge Type**: Multiclass Classification | **Metric**: Balanced Accuracy | **Current Best OOF**: 0.97105
+
+### Final Performance Snapshot (So Far)
+
+- Baseline stack (no advanced encoding): **0.97030** OOF
+- Pairwise target encoding + interactions: **0.96937** OOF (degraded)
+- Interactions only + High-threshold optimization: **0.97105** OOF (best so far)
+- Gap to current top LB reference (~0.9823): about **113 bp**
+
+### Key Learnings
+
+#### 1. Pairwise target encoding was not automatically beneficial
+- **Finding**: Full pairwise TE across many categorical columns reduced OOF vs baseline.
+- **Failure mode observed**: XGBoost fold instability (one fold dropped sharply) when TE features were added.
+- **Lesson**: More encoding can increase variance/noise; add TE selectively, not globally.
+
+#### 2. Threshold optimization produced immediate gains
+- **Finding**: Optimizing the High-class decision threshold on OOF probabilities improved balanced accuracy strongly.
+- **Best strategy**: Thresholded 3-model blend (LGB+XGB+CAT), not meta argmax.
+- **Lesson**: For imbalanced multiclass, post-processing can outperform additional feature complexity.
+
+#### 3. Model stability matters more than raw feature count
+- **Finding**: Interaction-only matrix (26 features) outperformed larger interaction+TE matrix (62 features).
+- **Lesson**: Prefer stable, high-signal features over large engineered sets.
+
+### Challenge-Specific Example
+
+From the latest local run:
+
+- `meta_argmax`: 0.97033
+- `blend_all_high_threshold`: 0.97105 at `High` threshold = **0.200**
+- Net gain from thresholding over meta argmax: **+0.00072**
+
+Interpretation: A simple decision-rule shift for the minority class created more gain than the heavy TE branch.
+
+### What To Read Before Next Iteration
+
+#### Priority 1: Multiclass imbalance + thresholding
+- Scikit-learn balanced accuracy docs: https://scikit-learn.org/stable/modules/generated/sklearn.metrics.balanced_accuracy_score.html
+- Threshold tuning overview (classification): https://scikit-learn.org/stable/modules/classification_threshold.html
+
+#### Priority 2: Leakage-safe categorical encoding
+- TargetEncoder example and cross-fitting discussion: https://scikit-learn.org/stable/auto_examples/preprocessing/plot_target_encoder_cross_val.html
+- Category Encoders docs (smoothing/regularization variants): https://contrib.scikit-learn.org/category_encoders/
+
+#### Priority 3: Tree-model behavior under high-dimensional encoded features
+- XGBoost parameter tuning notes: https://xgboost.readthedocs.io/en/stable/parameter.html
+- CatBoost multiclass docs: https://catboost.ai/en/docs/concepts/python-reference_catboostclassifier
+- LightGBM parameters (multiclass + regularization): https://lightgbm.readthedocs.io/en/stable/Parameters.html
+
+#### Priority 4: Kaggle process and CV-LB reliability
+- Kaggle ensembling guide (high-level practical): https://mlwave.com/kaggle-ensembling-guide/
+- Optuna docs for search over blend/feature subsets: https://optuna.readthedocs.io/en/stable/
+
+### Tomorrow's High-ROI Experiment Ladder (Minimal, Controlled)
+
+1. Keep interaction-only base fixed (current stable branch).
+2. Run threshold fine search around 0.20 (example: 0.16 to 0.26, step 0.01).
+3. Test selective TE only on the strongest pair candidates:
+   - `Water_Source__Irrigation_Type`
+   - `Water_Source__moisture_bucket`
+4. Evaluate each candidate independently before combining.
+5. Submit only candidates that improve both OOF and fold stability.
+
+### Working Rule For This Challenge
+
+> Prefer incremental, leakage-safe, stability-first improvements over broad feature explosions.
+
+---
+
+*Last Updated*: April 27, 2026
+*Next Challenge*: 2026-04 (Irrigation Need - Closing gap to 0.9823)
