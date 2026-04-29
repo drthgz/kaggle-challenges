@@ -4,13 +4,15 @@ Interaction-only pipeline (no pairwise target encoding)
 with High-class threshold optimization on OOF predictions.
 """
 
-import os, warnings
+import os
+import warnings
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import StratifiedKFold
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import balanced_accuracy_score
+from sklearn.isotonic import IsotonicRegression
 import lightgbm as lgb
 import xgboost as xgb
 from catboost import CatBoostClassifier
@@ -203,6 +205,42 @@ def find_best_high_threshold(y_true, oof_proba, high_idx, grid=None):
     return best_t, best_score, base_score
 
 
+def fit_ovr_isotonic_calibrators(proba, y_true, n_classes):
+    calibrators = []
+    for cls in range(n_classes):
+        iso = IsotonicRegression(out_of_bounds="clip")
+        iso.fit(proba[:, cls], (y_true == cls).astype(int))
+        calibrators.append(iso)
+    return calibrators
+
+
+def apply_ovr_isotonic_calibrators(proba, calibrators, eps=1e-12):
+    calibrated = np.column_stack(
+        [calibrators[cls].transform(proba[:, cls]) for cls in range(len(calibrators))]
+    )
+    calibrated = np.clip(calibrated, eps, 1.0)
+    row_sum = calibrated.sum(axis=1, keepdims=True)
+    return calibrated / np.clip(row_sum, eps, None)
+
+
+def crossfit_multiclass_calibration(
+    oof_proba, y_true, n_classes, n_splits=5, random_state=42
+):
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    calibrated_oof = np.zeros_like(oof_proba)
+
+    for tr_idx, val_idx in skf.split(oof_proba, y_true):
+        fold_calibrators = fit_ovr_isotonic_calibrators(
+            oof_proba[tr_idx], y_true[tr_idx], n_classes
+        )
+        calibrated_oof[val_idx] = apply_ovr_isotonic_calibrators(
+            oof_proba[val_idx], fold_calibrators
+        )
+
+    full_calibrators = fit_ovr_isotonic_calibrators(oof_proba, y_true, n_classes)
+    return calibrated_oof, full_calibrators
+
+
 # ── Train ──────────────────────────────────────────────────────────────────
 print("\n=== LightGBM ===")
 lgb_oof, lgb_test, lgb_score = run_cv(
@@ -279,6 +317,49 @@ print(
 )
 print(f"  meta-LR: base={meta_base:.5f}, tuned={meta_t_score:.5f}, t={meta_t:.3f}")
 
+# ── OOF-safe calibration + threshold optimization ─────────────────────────
+blend_cal_oof, blend_calibrators = crossfit_multiclass_calibration(
+    blend_oof, y.values, n_classes
+)
+blend_cal_test = apply_ovr_isotonic_calibrators(blend_test, blend_calibrators)
+
+blend_lc_cal_oof, blend_lc_calibrators = crossfit_multiclass_calibration(
+    blend_lc_oof, y.values, n_classes
+)
+blend_lc_cal_test = apply_ovr_isotonic_calibrators(blend_lc_test, blend_lc_calibrators)
+
+meta_cal_oof, meta_calibrators = crossfit_multiclass_calibration(
+    meta_oof_proba, y.values, n_classes
+)
+meta_cal_test = apply_ovr_isotonic_calibrators(meta_test_proba, meta_calibrators)
+
+blend_cal_score = balanced_accuracy_score(y.values, np.argmax(blend_cal_oof, axis=1))
+blend_lc_cal_score = balanced_accuracy_score(
+    y.values, np.argmax(blend_lc_cal_oof, axis=1)
+)
+meta_cal_score = balanced_accuracy_score(y.values, np.argmax(meta_cal_oof, axis=1))
+
+blend_cal_t, blend_cal_t_score, _ = find_best_high_threshold(
+    y.values, blend_cal_oof, high_idx=HIGH_CLASS_IDX
+)
+blend_lc_cal_t, blend_lc_cal_t_score, _ = find_best_high_threshold(
+    y.values, blend_lc_cal_oof, high_idx=HIGH_CLASS_IDX
+)
+meta_cal_t, meta_cal_t_score, _ = find_best_high_threshold(
+    y.values, meta_cal_oof, high_idx=HIGH_CLASS_IDX
+)
+
+print("\nCalibration + high threshold search (class=High):")
+print(
+    f"  blend(all3): cal_argmax={blend_cal_score:.5f}, cal_tuned={blend_cal_t_score:.5f}, t={blend_cal_t:.3f}"
+)
+print(
+    f"  blend(LGB+CAT): cal_argmax={blend_lc_cal_score:.5f}, cal_tuned={blend_lc_cal_t_score:.5f}, t={blend_lc_cal_t:.3f}"
+)
+print(
+    f"  meta-LR: cal_argmax={meta_cal_score:.5f}, cal_tuned={meta_cal_t_score:.5f}, t={meta_cal_t:.3f}"
+)
+
 # ── Candidate selection ────────────────────────────────────────────────────
 candidate_scores = {
     "lgb_argmax": lgb_score,
@@ -290,6 +371,12 @@ candidate_scores = {
     "blend_lgb_cat_high_threshold": blend_lc_t_score,
     "meta_argmax": meta_score,
     "meta_high_threshold": meta_t_score,
+    "blend_all_calibrated_argmax": blend_cal_score,
+    "blend_lgb_cat_calibrated_argmax": blend_lc_cal_score,
+    "meta_calibrated_argmax": meta_cal_score,
+    "blend_all_calibrated_high_threshold": blend_cal_t_score,
+    "blend_lgb_cat_calibrated_high_threshold": blend_lc_cal_t_score,
+    "meta_calibrated_high_threshold": meta_cal_t_score,
 }
 
 best_name = max(candidate_scores, key=candidate_scores.get)
@@ -311,6 +398,18 @@ elif best_name == "blend_lgb_cat_high_threshold":
     final_pred = apply_high_threshold(blend_lc_test, HIGH_CLASS_IDX, blend_lc_t)
 elif best_name == "meta_high_threshold":
     final_pred = apply_high_threshold(meta_test_proba, HIGH_CLASS_IDX, meta_t)
+elif best_name == "blend_all_calibrated_argmax":
+    final_pred = np.argmax(blend_cal_test, axis=1)
+elif best_name == "blend_lgb_cat_calibrated_argmax":
+    final_pred = np.argmax(blend_lc_cal_test, axis=1)
+elif best_name == "meta_calibrated_argmax":
+    final_pred = np.argmax(meta_cal_test, axis=1)
+elif best_name == "blend_all_calibrated_high_threshold":
+    final_pred = apply_high_threshold(blend_cal_test, HIGH_CLASS_IDX, blend_cal_t)
+elif best_name == "blend_lgb_cat_calibrated_high_threshold":
+    final_pred = apply_high_threshold(blend_lc_cal_test, HIGH_CLASS_IDX, blend_lc_cal_t)
+elif best_name == "meta_calibrated_high_threshold":
+    final_pred = apply_high_threshold(meta_cal_test, HIGH_CLASS_IDX, meta_cal_t)
 else:
     final_pred = np.argmax(meta_test_proba, axis=1)
 
@@ -324,6 +423,6 @@ for k, v in sorted(candidate_scores.items(), key=lambda kv: kv[1], reverse=True)
 
 print(f"\nUsing: {best_name} (OOF={best_oof:.5f})")
 sub = pd.DataFrame({"id": test_df["id"], "Irrigation_Need": final_labels})
-sub.to_csv("./submissions/submission_v3_interactions_threshold.csv", index=False)
-print("Saved: ./submissions/submission_v3_interactions_threshold.csv")
+sub.to_csv("./submissions/submission_v4_threshold_calibration.csv", index=False)
+print("Saved: ./submissions/submission_v4_threshold_calibration.csv")
 print(sub["Irrigation_Need"].value_counts())
