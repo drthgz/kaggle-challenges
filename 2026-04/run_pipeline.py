@@ -131,10 +131,16 @@ def build_xgb(n_classes):
 
 
 def build_cat(n_classes):
+    # Params from Optuna search (60 trials, 2026-04-29); best 3-fold = 0.969922
     return CatBoostClassifier(
-        iterations=900,
-        learning_rate=0.04,
-        depth=7,
+        iterations=1388,
+        learning_rate=0.035922606902684895,
+        depth=4,
+        l2_leaf_reg=11.312251057160324,
+        bagging_temperature=0.7607850486168974,
+        random_strength=5.612771975694963,
+        border_count=204,
+        grow_policy="Lossguide",
         loss_function="MultiClass",
         eval_metric="Accuracy",
         auto_class_weights="Balanced",
