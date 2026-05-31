@@ -398,5 +398,74 @@ Interpretation: A simple decision-rule shift for the minority class created more
 
 ---
 
-*Last Updated*: April 27, 2026
-*Next Challenge*: 2026-04 (Irrigation Need - Closing gap to 0.9823)
+## 2026-05: Predicting F1 Pit Stops (Binary Classification)
+
+**Challenge Type**: Binary Classification | **Metric**: AUC-ROC | **Current Best OOF**: 0.94832
+
+### Final Performance Snapshot (V1 Notebook)
+
+- Baseline (Logistic Regression, 5-fold): **0.83639** mean AUC
+- Improved model (LightGBM, 5-fold OOF): **0.94832** AUC
+- Net gain over baseline: **+0.11193** AUC
+- Submission artifacts created:
+   - `submission_v1_baseline_logreg.csv`
+   - `submission_v1_lgbm.csv`
+   - `submission.csv`
+
+### Key Learnings
+
+#### 1. Pipeline robustness is as important as model quality
+- **Finding**: Initial run failed because non-numeric columns reached `StandardScaler` (`ValueError: could not convert string to float: 'D109'`).
+- **Fix**: Explicit categorical detection + LabelEncoding for object/string/category types, then a safety pass for any residual non-numeric columns.
+- **Lesson**: Add a preprocessing assertion before modeling for all notebook pipelines:
+   - verify no non-numeric columns enter scaled linear models
+   - coerce numeric and fill NaNs from conversion edge cases
+
+#### 2. Domain-informed features + boosting created a large lift
+- **Finding**: Features like `TyreLifePct`, `TyreAge_x_Deg`, and `Progress_x_TyreLife` paired well with LightGBM.
+- **Evidence**: AUC jump from 0.83639 (linear baseline) to 0.94832 (LightGBM).
+- **Lesson**: For race strategy problems, nonlinear interactions are first-order signal.
+
+#### 3. Feature importance aligned with race dynamics
+- **Top signals observed**: `LapTime (s)`, `LapTime_Delta`, `Driver`, `Race`, `Cumulative_Degradation`, `RaceProgress`.
+- **Interpretation**: Pit decisions depend on pace trend + degradation + context, not one isolated variable.
+- **Caution**: Keep a leakage-check mindset around time/pace features in future iterations.
+
+#### 4. Baseline-first workflow improved debugging speed
+- **Finding**: Running a simple logistic baseline first surfaced preprocessing issues early.
+- **Lesson**: Keep the sequence fixed for tabular competitions:
+   1. ETL/data checks
+   2. baseline model
+   3. improved model
+   4. only then tuning/ensembling
+
+### Next Iteration Plan (High ROI)
+
+1. Add GroupKFold-style validation by race (or race-year) to stress-test generalization.
+2. Try CatBoost with native categorical handling (reduce manual encoding fragility).
+3. Add probability calibration (isotonic/platt) and evaluate whether it helps leaderboard AUC.
+4. Run Optuna with a 30-60 trial budget on LightGBM/CatBoost.
+
+### Working Rule For This Challenge
+
+> Build reliability first (clean, leakage-safe, reproducible pipeline), then optimize AUC.
+
+### 2026-05 V2 Update (DriverxRace + Time Windows + Optuna)
+
+- Added OOF-smoothed target encoding for `Driver x Race` and frequency encoding.
+- Added causal lag/rolling features by `(Year, Race, Driver)`.
+- Added compact Optuna tuning (12 trials, 3-fold objective) for LightGBM.
+
+Observed results:
+- V2 Logistic baseline improved to **0.84676** mean AUC.
+- V2 tuned LightGBM reached **0.94787** OOF.
+- Compared with V1 LightGBM (**0.94832**), V2 was lower by **0.00045**.
+
+Lesson:
+- Higher feature sophistication does not guarantee better OOF; ablation and validation design are critical.
+- Keep incremental feature additions and verify each block independently.
+
+---
+
+*Last Updated*: May 31, 2026
+*Next Challenge*: 2026-05 (F1 Pit Stops - V2 generalization and calibration)
